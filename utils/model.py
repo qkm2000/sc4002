@@ -22,7 +22,7 @@ class SentimentAnalysis:
         lr=0.001,
         rnn_type='LSTM',
         early_stopping_patience=3,
-        model_save_path='/modelfiles',
+        model_save_path="modelfiles/",
         freeze_embeddings=True
     ):
         self.sentences_train = sentences_train
@@ -122,6 +122,8 @@ class SentimentAnalysis:
             if accuracy > self.best_accuracy:
                 self.best_accuracy = accuracy
                 self.patience_counter = 0  # Reset patience counter
+                # model is improving, save the model
+                self.save_model()
             else:
                 self.patience_counter += 1
 
@@ -129,12 +131,9 @@ class SentimentAnalysis:
             if self.patience_counter >= self.early_stopping_patience:
                 print(f"Early stopping triggered after {epoch + 1} epochs.")
                 break
-        torch.save(
-            self.model.state_dict(),
-            f"{self.model_save_path}sentiment_rnn_{self.rnn_type}_{self.version}.pth",
-        )
-        accuracy = self.validate(dataset="val")
+        accuracy = self.validate(dataset="test")
         print(f"Test Accuracy: {accuracy:.4f}")
+        self.load_model()
 
     def validate(self, dataset='val'):
         """Evaluate the model on the validation set."""
@@ -154,6 +153,21 @@ class SentimentAnalysis:
         accuracy = correct / total
         print(f"Validation Accuracy: {accuracy:.4f}")
         return accuracy
+
+    def save_model(self):
+        torch.save(
+            self.model.state_dict(),
+            f"{self.model_save_path}sentiment_rnn_{self.rnn_type}_{self.version}.pth",
+        )
+
+    def load_model(self, version=None):
+        if version:
+            self.version = version
+        state_dict = torch.load(
+            f"{self.model_save_path}sentiment_rnn_{self.rnn_type}_{self.version}.pth",
+            weights_only=True
+        )
+        self.model.state_dict = state_dict
 
 
 class SentimentDataset(Dataset):
