@@ -41,6 +41,7 @@ class SentimentAnalysis:
         self.freeze_embeddings = freeze_embeddings
 
         # Prepare data
+        print("Preparing data...")
         self.word2vec_model = self._load_word2vec()
         self.word_index = {
             word: i for i, word in enumerate(
@@ -59,6 +60,8 @@ class SentimentAnalysis:
         self.train_loader = self._create_dataloader(self.X_train, self.y_train)
         self.val_loader = self._create_dataloader(self.X_val, self.y_val)
         self.test_loader = self._create_dataloader(self.X_test, self.y_test)
+
+        print("Data preparation complete.")
 
         # Define the model
         self.model = self._build_model()
@@ -131,9 +134,10 @@ class SentimentAnalysis:
             if self.patience_counter >= self.early_stopping_patience:
                 print(f"Early stopping triggered after {epoch + 1} epochs.")
                 break
-        accuracy = self.validate(dataset="test")
-        print(f"Test Accuracy: {accuracy:.4f}")
+
+        # load the best model and evaluate on the test set
         self.load_model()
+        accuracy = self.validate(dataset="test")
 
     def validate(self, dataset='val'):
         """Evaluate the model on the validation set."""
@@ -142,8 +146,10 @@ class SentimentAnalysis:
         total = 0
         if dataset == 'val':
             dataloader = self.val_loader
+            mode = "Validation"
         elif dataset == 'test':
             dataloader = self.test_loader
+            mode = "Test"
         with torch.no_grad():
             for X_batch, y_batch in dataloader:
                 output = self.model(X_batch)
@@ -151,7 +157,7 @@ class SentimentAnalysis:
                 correct += (predicted == y_batch).sum().item()
                 total += y_batch.size(0)
         accuracy = correct / total
-        print(f"Validation Accuracy: {accuracy:.4f}")
+        print(f"{mode} Accuracy: {accuracy:.4f}")
         return accuracy
 
     def save_model(self):
@@ -159,6 +165,7 @@ class SentimentAnalysis:
             self.model.state_dict(),
             f"{self.model_save_path}sentiment_rnn_{self.rnn_type}_{self.version}.pth",
         )
+        print("Model saved.")
 
     def load_model(self, version=None):
         if version:
@@ -167,7 +174,8 @@ class SentimentAnalysis:
             f"{self.model_save_path}sentiment_rnn_{self.rnn_type}_{self.version}.pth",
             weights_only=True
         )
-        self.model.state_dict = state_dict
+        self.model.load_state_dict(state_dict)
+        print("Model loaded.")
 
 
 class SentimentDataset(Dataset):
