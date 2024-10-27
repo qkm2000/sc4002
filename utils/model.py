@@ -1,10 +1,13 @@
 import gensim.downloader as api
+from gensim.models import Word2Vec
+import gensim
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
 from utils.utils import *
+import numpy as np
 
 
 class SentimentAnalysis:
@@ -17,13 +20,16 @@ class SentimentAnalysis:
         sentences_test,
         labels_test,
         version,
-        embedding_dim=300,  # 300 for Google News Word2Vec
+        embedding_dim=100,
         batch_size=32,
         lr=0.001,
         rnn_type='LSTM',
         early_stopping_patience=3,
         model_save_path="modelfiles/",
-        freeze_embeddings=True
+        freeze_embeddings=True,
+        word2vec_filepath=None,
+        input_embedding_filepath=None,
+        bidirectional=True,
     ):
         self.sentences_train = sentences_train
         self.labels_train = labels_train
@@ -39,16 +45,28 @@ class SentimentAnalysis:
         self.early_stopping_patience = early_stopping_patience
         self.model_save_path = model_save_path
         self.freeze_embeddings = freeze_embeddings
+        self.word2vec_filepath = word2vec_filepath
+        self.bidirectional = bidirectional
 
         # Prepare data
         print("Preparing data...")
         self.word2vec_model = self._load_word2vec()
-        self.word_index = {
-            word: i for i, word in enumerate(
-                self.word2vec_model.index_to_key
-            )
-        }
-        self.embedding_matrix = self.word2vec_model.vectors
+        if word2vec_filepath:
+            self.word_index = {
+                word: i for i, word in enumerate(
+                    self.word2vec_model.wv.index_to_key
+                )
+            }
+        else:
+            self.word_index = {
+                word: i for i, word in enumerate(
+                    self.word2vec_model.index_to_key
+                )
+            }
+        if input_embedding_filepath:
+            self.embedding_matrix = np.load(input_embedding_filepath)
+        else:
+            self.embedding_matrix = self.word2vec_model.vectors
         self.X_train, self.y_train = self._prepare_data(
             self.sentences_train, self.labels_train)
         self.X_val, self.y_val = self._prepare_data(
@@ -76,7 +94,10 @@ class SentimentAnalysis:
 
     def _load_word2vec(self):
         """Load a pretrained Word2Vec model from Gensim."""
-        return api.load('word2vec-google-news-300')
+        if self.word2vec_filepath:
+            return gensim.models.KeyedVectors.load(self.word2vec_filepath)
+        else:
+            return api.load('word2vec-google-news-300')
 
     def _prepare_data(self, sentences, labels):
         """Convert sentences to sequences and pad them."""
@@ -86,8 +107,11 @@ class SentimentAnalysis:
             for sentence in sentences]
         # Convert to tensors and pad the sequences
         X = [torch.tensor(seq, dtype=torch.long) for seq in X]
-        X_padded = pad_sequence(X, batch_first=True,
-                                padding_value=0)  # Use 0 for padding
+        X_padded = pad_sequence(
+            X,
+            batch_first=True,
+            padding_value=0
+            )  # Use 0 for padding
         y = torch.tensor(labels, dtype=torch.float32).unsqueeze(
             1)  # Reshape to match the output shape
         return X_padded, y
@@ -103,7 +127,8 @@ class SentimentAnalysis:
             self.embedding_dim,
             self.embedding_matrix,
             rnn_type=self.rnn_type,
-            freeze_embeddings=self.freeze_embeddings
+            freeze_embeddings=self.freeze_embeddings,
+            bidirectional=self.bidirectional
         )
 
     def train(self, epochs=10):
@@ -196,7 +221,8 @@ class RNNModel(nn.Module):
         embedding_dim,
         embedding_matrix,
         rnn_type='LSTM',
-        freeze_embeddings=True
+        freeze_embeddings=True,
+        bidirectional=True,
     ):
         super(RNNModel, self).__init__()
         # Create the embedding layer using Word2Vec
@@ -212,7 +238,7 @@ class RNNModel(nn.Module):
                 128,  # Hidden size for each direction
                 batch_first=True,
                 num_layers=1,
-                bidirectional=True  # Bidirectional LSTM
+                bidirectional=bidirectional  # Bidirectional LSTM
             )
         elif rnn_type == 'GRU':
             self.rnn = nn.GRU(
@@ -220,11 +246,13 @@ class RNNModel(nn.Module):
                 128,  # Hidden size for each direction
                 batch_first=True,
                 num_layers=1,
-                bidirectional=True  # Bidirectional GRU
+                bidirectional=bidirectional  # Bidirectional GRU
             )
 
-        # Adjust output size for bidirectional (128 * 2 = 256)
-        self.fc = nn.Linear(128 * 2, 1)
+        if bidirectional:
+            self.fc = nn.Linear(128 * 2, 1)
+        else:
+            self.fc = nn.Linear(128, 1)
         self.dropout = nn.Dropout(0.5)  # Dropout for regularization
         self.sigmoid = nn.Sigmoid()
 
@@ -238,7 +266,6 @@ class RNNModel(nn.Module):
             _, hn = self.rnn(x)
 
         # Combine forward and backward hidden states
-        hn = self.dropout(
-            hn[-2:].transpose(0, 1).contiguous().view(x.size(0), -1))
+        hn = self.dropout(hn[-2:].transpose(0, 1).contiguous().view(x.size(0), -1))
         out = self.fc(hn)
         return self.sigmoid(out)
