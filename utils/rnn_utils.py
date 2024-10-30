@@ -26,22 +26,37 @@ class SentimentDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-def load_word2vec(filepath=None):
+def load_word2vec(
+    filepath=None,
+    word2vec_api=None,
+):
     """
-    Load a Word2Vec model from a specified file path or
-    from the pre-trained "word2vec-google-news-300" model.
+    Load a Word2Vec model from a file or a pre-trained model from the
+    gensim API.
+
     Args:
         filepath (str, optional):
-            The file path to the Word2Vec model. If not provided,
-            the pre-trained "word2vec-google-news-300" model will be loaded.
+            The path to the Word2Vec model file. Defaults to None.
+        word2vec_api (str, optional):
+            The name of the pre-trained model to load from the gensim API.
+            Defaults to None.
+
     Returns:
         gensim.models.KeyedVectors:
             The loaded Word2Vec model.
+
+    Notes:
+    - If both `filepath` and `word2vec_api` are provided,
+      `word2vec_api` will take precedence.
+    - If neither `filepath` nor `word2vec_api` are provided, the function
+      will load the "fasttext-wiki-news-subwords-300" model from the
+      gensim API.
     """
-    if filepath:
+    if word2vec_api is not None:
+        return api.load(word2vec_api)
+    if filepath is not None:
         return gensim.models.KeyedVectors.load(filepath)
-    else:
-        return api.load("word2vec-google-news-300")
+    return api.load("fasttext-wiki-news-subwords-300")
 
 
 def prepare_data(
@@ -51,7 +66,9 @@ def prepare_data(
     max_seq_len=15
 ):
     """
-    Prepares data for RNN input by tokenizing, padding, and converting to tensors.
+    Prepares data for RNN input by tokenizing, padding,
+    and converting to tensors.
+
     Args:
         sentences (list of str):
             List of sentences to be processed.
@@ -86,7 +103,8 @@ def prepare_data(
     )
 
     # Further clip or pad to ensure all are exactly max_seq_len
-    X_padded = X_padded[:, :max_seq_len] if X_padded.size(1) > max_seq_len else \
+    X_padded = X_padded[:, :max_seq_len] if \
+        X_padded.size(1) > max_seq_len else \
         torch.nn.functional.pad(
             X_padded, (0, max_seq_len - X_padded.size(1)), value=0)
 
