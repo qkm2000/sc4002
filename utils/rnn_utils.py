@@ -198,6 +198,21 @@ def validate(model, val_dataloader):
     return accuracy
 
 
+def last_hidden_state(outputs):
+    """Extract the last hidden state for classification."""
+    return outputs[:, -1]
+
+
+def mean_pooling(outputs):
+    """Apply mean pooling on the RNN outputs for classification."""
+    return torch.mean(outputs, dim=1)
+
+
+def max_pooling(outputs):
+    """Apply max pooling on the RNN outputs for classification."""
+    return torch.max(outputs, dim=1).values
+
+
 def train(
     model,
     trn_dataloader,
@@ -210,6 +225,7 @@ def train(
     criterion=nn.BCELoss(),
     early_stopping_patience=5,
     load_best_model_at_end=True,
+    train_mode=None,
 ):
     """
     Train a given model using the provided training and validation dataloaders.
@@ -238,6 +254,11 @@ def train(
         load_best_model_at_end (bool, optional):
             Whether to load the best model at the end of training.
             Default is True.
+        train_mode (str, optional):
+            Mode to process RNN outputs.
+            Options are "last_state", "mean_pool", "max_pool".
+            Default is None, which uses the original output
+            without modification.
     """
     best_accuracy = 0
     for epoch in range(epochs):
@@ -245,20 +266,43 @@ def train(
         total_loss = 0
         for X_batch, y_batch in trn_dataloader:
             optimizer.zero_grad()
-            output = model(X_batch)
+
+            # Forward pass through the model
+            outputs = model(X_batch)
+
+            # Select output based on train_mode
+            if train_mode == "last_state":
+                output = last_hidden_state(outputs)
+            elif train_mode == "mean_pool":
+                output = mean_pooling(outputs)
+            elif train_mode == "max_pool":
+                output = max_pooling(outputs)
+            else:
+                output = outputs
+
+            if train_mode:
+                output = output.view(output.size(0), -1)
+
+            # Calculate the loss
             loss = criterion(output, y_batch)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
+
         print(f"Epoch {epoch + 1:>3}/{epochs:>3},", end=" ")
         print(f"Loss: {total_loss / len(trn_dataloader):.4f},", end=" ")
+
+        if train_mode:
+            filepath = f"{model_save_path}{model_type}_{train_mode}_v{version}.pth"
+        else:
+            filepath = f"{model_save_path}{model_type}_v{version}.pth"
 
         accuracy = validate(model, val_dataloader)
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             patience_counter = 0  # Reset patience counter
             # model is improving, save the model
-            save_model(model, f"{model_save_path}{model_type}_v{version}.pth")
+            save_model(model, filepath)
         else:
             patience_counter += 1
 
@@ -267,7 +311,7 @@ def train(
             print(f"Early stopping triggered after {epoch + 1} epochs.")
             break
 
-    # load the best model and evaluate on the test set
+    # Load the best model if specified
     if load_best_model_at_end:
         print("Training ended, loading best model...")
-        load_model(model, f"{model_save_path}{model_type}_v{version}.pth")
+        load_model(model, filepath)
