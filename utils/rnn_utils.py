@@ -49,14 +49,14 @@ def load_word2vec(
     - If both `filepath` and `word2vec_api` are provided,
       `word2vec_api` will take precedence.
     - If neither `filepath` nor `word2vec_api` are provided, the function
-      will load the "fasttext-wiki-news-subwords-300" model from the
+      will load the "word2vec-google-news-300" model from the
       gensim API.
     """
     if word2vec_api is not None:
         return api.load(word2vec_api)
     if filepath is not None:
         return gensim.models.KeyedVectors.load(filepath)
-    return api.load("fasttext-wiki-news-subwords-300")
+    return api.load("word2vec-google-news-300")
 
 
 def prepare_data(

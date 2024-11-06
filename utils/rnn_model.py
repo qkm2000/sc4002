@@ -3,6 +3,25 @@ from torch import nn
 
 
 class RNNModel(nn.Module):
+    """
+    A Recurrent Neural Network (RNN) model with support
+    for different RNN types (RNN, LSTM, GRU).
+    Args:
+        embedding_dim (int):
+            Dimension of the embeddings.
+        hidden_size (int):
+            Number of features in the hidden state.
+        embedding_matrix (numpy.ndarray):
+            Pre-trained embedding matrix.
+        rnn_type (str, optional):
+            Type of RNN to use ('rnn', 'lstm', 'gru'). Default is 'rnn'.
+        freeze_embeddings (bool, optional):
+            Whether to freeze the embedding weights. Default is True.
+        bidirectional (bool, optional):
+            If True, becomes a bidirectional RNN. Default is True.
+        num_layers (int, optional):
+            Number of recurrent layers. Default is 1.
+    """
     def __init__(
         self,
         embedding_dim,
