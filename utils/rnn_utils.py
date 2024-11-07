@@ -3,11 +3,13 @@ from torch.nn.utils.rnn import pad_sequence
 from torch import nn
 import torch
 from gensim.utils import simple_preprocess
+from gensim.models import KeyedVectors
 import gensim.downloader as api
 import gensim
 import nltk
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 nltk.download('punkt_tab')
 nltk.download('wordnet')
@@ -26,7 +28,19 @@ class SentimentDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
+def create_directory(directory_path):
+    """
+    Create a directory if it does not exist.
+    Args:
+        directory_path (str):
+            The path to the directory to be created.
+    """
+    if not os.path.exists(directory_path):
+        os.makedirs(directory_path)
+
+
 def load_word2vec(
+    vocab=None,
     filepath=None,
     word2vec_api=None,
 ):
@@ -35,6 +49,9 @@ def load_word2vec(
     gensim API.
 
     Args:
+        vocab (list of str, optional):
+            List of words in the vocabulary.
+            This is only required when loading a model from a .npy file.
         filepath (str, optional):
             The path to the Word2Vec model file. Defaults to None.
         word2vec_api (str, optional):
@@ -55,7 +72,13 @@ def load_word2vec(
     if word2vec_api is not None:
         return api.load(word2vec_api)
     if filepath is not None:
-        return gensim.models.KeyedVectors.load(filepath)
+        embedding_matrix = np.load(filepath)
+        if vocab is None:
+            raise ValueError("Vocabulary must be provided when loading .npy")
+        vector_size = embedding_matrix.shape[1]
+        word2vec_model = KeyedVectors(vector_size=vector_size)
+        word2vec_model.add_vectors(vocab, embedding_matrix)
+        return word2vec_model
     return api.load("word2vec-google-news-300")
 
 
@@ -266,6 +289,7 @@ def train(
             - accuracies (list of float):
                 List of accuracy values for each epoch.
     """
+    create_directory(model_save_path)
     losses = []  # List to store loss values
     accuracies = []  # List to store accuracy values
     best_accuracy = 0
