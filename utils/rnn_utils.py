@@ -325,7 +325,8 @@ def train(
         print(f"Loss: {total_loss / len(trn_dataloader):.4f},", end=" ")
 
         if train_mode:
-            filepath = f"{model_save_path}{model_type}_{train_mode}_v{version}.pth"
+            filepath = f"{model_save_path}{
+                model_type}_{train_mode}_v{version}.pth"
         else:
             filepath = f"{model_save_path}{model_type}_v{version}.pth"
 
@@ -369,3 +370,26 @@ def plot_loss_accuracy(losses, accuracies):
     plt.legend()
     plt.grid(True)
     plt.show()
+
+
+def save_embeddings(word_index, word2vec_model, save_path):
+    """
+    Save the embeddings for the words in the vocabulary to a file.
+    Args:
+        word_index (dict):
+            Dictionary mapping words to their respective indices.
+        word2vec_model (gensim.models.KeyedVectors):
+            The Word2Vec model containing the embeddings.
+        save_path (str):
+            The file path where the embeddings will be saved.
+    """
+    # Get the vector size dynamically if `vector_size` is not available
+    vector_size = word2vec_model.vector_size if hasattr(word2vec_model, 'vector_size') else len(
+        word2vec_model[word_index.keys().__iter__().__next__()])
+
+    embedding_matrix = np.zeros((len(word_index), vector_size))
+    for word, i in word_index.items():
+        if word in word2vec_model.key_to_index:
+            embedding_matrix[i] = word2vec_model[word]
+    np.save(save_path, embedding_matrix)
+    print("Embeddings saved.")
