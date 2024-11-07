@@ -259,7 +259,15 @@ def train(
             Options are "last_state", "mean_pool", "max_pool".
             Default is None, which uses the original output
             without modification.
+    Returns:
+        tuple: A tuple containing:
+            - losses (list of float):
+                List of loss values for each epoch.
+            - accuracies (list of float):
+                List of accuracy values for each epoch.
     """
+    losses = []  # List to store loss values
+    accuracies = []  # List to store accuracy values
     best_accuracy = 0
     for epoch in range(epochs):
         model.train()
@@ -298,6 +306,11 @@ def train(
             filepath = f"{model_save_path}{model_type}_v{version}.pth"
 
         accuracy = validate(model, val_dataloader)
+
+        # record avg loss and accuracy
+        accuracies.append(accuracy)
+        losses.append(total_loss / len(trn_dataloader))
+
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             patience_counter = 0  # Reset patience counter
@@ -316,6 +329,8 @@ def train(
         print("Training ended, loading best model...")
         load_model(model, filepath)
 
+    return losses, accuracies
+
 
 def plot_loss_accuracy(losses, accuracies):
     epochs = range(1, len(losses) + 1)
@@ -330,79 +345,3 @@ def plot_loss_accuracy(losses, accuracies):
     plt.legend()
     plt.grid(True)
     plt.show()
-
-def train_and_plot(
-    model,
-    trn_dataloader,
-    val_dataloader,
-    optimizer,
-    version,
-    model_save_path,
-    model_type,
-    epochs=10,
-    criterion=nn.BCELoss(),
-    early_stopping_patience=5,
-    load_best_model_at_end=True,
-    train_mode=None,
-):
-    best_accuracy = 0
-    patience_counter = 0
-
-    losses = []  # List to store loss values
-    accuracies = []  # List to store accuracy values
-
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-        for X_batch, y_batch in trn_dataloader:
-            optimizer.zero_grad()
-            outputs = model(X_batch)
-
-            # Select output based on train_mode
-            if train_mode == "last_state":
-                output = last_hidden_state(outputs)
-            elif train_mode == "mean_pool":
-                output = mean_pooling(outputs)
-            elif train_mode == "max_pool":
-                output = max_pooling(outputs)
-            else:
-                output = outputs
-
-            if train_mode:
-                output = output.view(output.size(0), -1)
-
-            # Calculate the loss
-            loss = criterion(output, y_batch)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-
-        average_loss = total_loss / len(trn_dataloader)
-        losses.append(average_loss)  # Record loss for this epoch
-
-        accuracy = validate(model, val_dataloader)
-        accuracies.append(accuracy)  # Record accuracy for this epoch
-
-        print(f"Epoch {epoch + 1:>3}/{epochs:>3}, Loss: {average_loss:.4f}, Accuracy: {accuracy:.4f}")
-
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
-            patience_counter = 0  # Reset patience counter
-            if train_mode:
-                filepath = f"{model_save_path}{model_type}_{train_mode}_v{version}.pth"
-            else:
-                filepath = f"{model_save_path}{model_type}_v{version}.pth"
-            save_model(model, filepath)
-        else:
-            patience_counter += 1
-
-        if patience_counter >= early_stopping_patience:
-            print(f"Early stopping triggered after {epoch + 1} epochs.")
-            break
-
-    if load_best_model_at_end:
-        print("Training ended, loading best model...")
-        load_model(model, filepath)
-
-    # Call the plot function after training is complete
-    plot_loss_accuracy(losses, accuracies)
