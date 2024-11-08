@@ -369,3 +369,40 @@ def plot_loss_accuracy(losses, accuracies):
     plt.legend()
     plt.grid(True)
     plt.show()
+
+def plot_training_progress(train_losses, val_accuracies):
+    """
+    Plot the training progress of the CNN model, including training losses and validation accuracies on the same graph.
+    
+    Args:
+        train_losses (list of float): List of training losses for each epoch.
+        val_accuracies (list of float): List of validation accuracies for each epoch.
+    """
+    epochs = range(1, len(train_losses) + 1)  # Number of epochs
+
+    # Create a figure and a set of subplots
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    # Plot training loss on the first y-axis
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Training Loss', color='blue')
+    ax1.plot(epochs, train_losses, label='Training Loss', color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+
+    # Create a second y-axis to plot validation accuracy
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Validation Accuracy', color='green')
+    ax2.plot(epochs, val_accuracies, label='Validation Accuracy', color='green')
+    ax2.tick_params(axis='y', labelcolor='green')
+
+    # Add a title and grid
+    plt.title('Training Loss and Validation Accuracy Over Epochs')
+    ax1.grid(True)
+
+    # Show legend for both y-axes
+    ax1.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    # Display the plot
+    plt.tight_layout()
+    plt.show()
