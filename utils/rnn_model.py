@@ -5,7 +5,7 @@ from torch import nn
 class RNNModel(nn.Module):
     """
     A Recurrent Neural Network (RNN) model with support
-    for different RNN types (RNN, LSTM, GRU).
+    for different RNN types (RNN, LSTM, GRU, CNN).
     Args:
         embedding_dim (int):
             Dimension of the embeddings.
@@ -14,7 +14,7 @@ class RNNModel(nn.Module):
         embedding_matrix (numpy.ndarray):
             Pre-trained embedding matrix.
         rnn_type (str, optional):
-            Type of RNN to use ('rnn', 'lstm', 'gru'). Default is 'rnn'.
+            Type of RNN to use ('rnn', 'lstm', 'gru', 'cnn'). Default is 'rnn'.
         freeze_embeddings (bool, optional):
             Whether to freeze the embedding weights. Default is True.
         bidirectional (bool, optional):
@@ -66,9 +66,14 @@ class RNNModel(nn.Module):
                 num_layers=num_layers,
                 bidirectional=bidirectional
             )
+        elif self.rnn_type == 'cnn':
+                self.conv1 = nn.Conv1d(in_channels=embedding_dim, out_channels=hidden_size, kernel_size=3, padding=1)
+                self.conv2 = nn.Conv1d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, padding=1)
+                self.pool = nn.MaxPool1d(kernel_size=2)
+                self.fc = nn.Linear(hidden_size, 1)
         else:
             raise ValueError(
-                "Invalid RNN type. Choose from 'rnn', 'lstm', or 'gru'.")
+                "Invalid RNN type. Choose from 'rnn', 'lstm', gru', or 'cnn'.")
 
         # Define the fully connected layer based on bidirectional setting
         if bidirectional:
@@ -89,6 +94,16 @@ class RNNModel(nn.Module):
             _, (hn, _) = self.rnn(x)
         elif self.rnn_type == 'gru':
             _, hn = self.rnn(x)
+        elif self.rnn_type == 'cnn':
+            x = x.permute(0, 2, 1)  # Change to (batch_size, embedding_dim, seq_len) for Conv1d
+            x = self.conv1(x)        # Apply first convolution layer
+            x = torch.relu(x)
+            x = self.conv2(x)        # Apply second convolution layer
+            x = torch.relu(x)
+            x = self.pool(x)         # Apply max pooling
+            x = torch.max(x, 2)[0]   # Global max pooling over sequence length
+            x = self.dropout(x)
+            out = self.fc(x)
 
         # Combine forward and backward hidden states if bidirectional
         if self.rnn.bidirectional:
