@@ -40,7 +40,11 @@ def load_model(model, model_save_path):
     print("Model loaded.")
 
 
-def validate(model, val_dataloader):
+def validate(
+    model,
+    val_dataloader,
+    device='cuda' if torch.cuda.is_available() else 'cpu',
+):
     """
     Evaluate the performance of a model on a validation dataset.
     Args:
@@ -60,6 +64,7 @@ def validate(model, val_dataloader):
     with torch.no_grad():
         for data in val_dataloader:
             inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             predicted = torch.round(outputs)
             total += labels.size(0)
@@ -80,7 +85,8 @@ def train_cnn(
     epochs=10,
     criterion=nn.BCELoss(),
     early_stopping_patience=5,
-    load_best_model_at_end=True
+    load_best_model_at_end=True,
+    device='cuda' if torch.cuda.is_available() else 'cpu',
 ):
     """
     Train a CNN model using the provided training and validation dataloaders.
@@ -116,6 +122,7 @@ def train_cnn(
     """
     create_directory(model_save_path)
 
+    model.to(device)
     train_losses = []
     val_accuracies = []
     best_accuracy = 0
@@ -127,6 +134,7 @@ def train_cnn(
 
         # Training loop
         for X_batch, y_batch in tqdm(trn_dataloader, desc=f"Epoch {epoch + 1}/{epochs}", unit="batch"):
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
 
             # Forward pass
