@@ -88,10 +88,10 @@ def train_hybrid_model(
 ):
     # Move model to specified device
     model.to(device)
-    
+
     best_accuracy = 0
     patience_counter = 0  # for early stopping
-    
+
     # Lists to store losses and accuracies for each epoch
     train_losses = []
     val_accuracies = []
@@ -99,34 +99,34 @@ def train_hybrid_model(
     for epoch in range(epochs):
         model.train()
         total_loss = 0
-        
+
         for X_batch, y_batch in trn_dataloader:
             # Move data to the specified device
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-            
+
             optimizer.zero_grad()
             outputs = model(X_batch)
-    
+
             # Ensure both outputs and y_batch have shape [batch_size, 1]
             outputs = outputs.view(-1, 1)
             y_batch = y_batch.view(-1, 1)
-            
+
             # Calculate loss
             loss = criterion(outputs, y_batch.float())
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        
+
         # Calculate average loss for this epoch
         avg_loss = total_loss / len(trn_dataloader)
         train_losses.append(avg_loss)  # Store training loss for the epoch
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
-        
+
         # Validate model
         accuracy = validate(model, val_dataloader, device)
         val_accuracies.append(accuracy)  # Store validation accuracy for the epoch
         print(f"Validation Accuracy: {accuracy:.4f}")
-        
+
         # Save the best model
         if accuracy > best_accuracy:
             best_accuracy = accuracy
@@ -135,17 +135,17 @@ def train_hybrid_model(
             save_model(model, best_model_path)
         else:
             patience_counter += 1
-        
+
         # Early stopping
         if patience_counter >= early_stopping_patience:
             print("Early stopping triggered.")
             break
-    
+
     # Load the best model at the end if specified
     if load_best_model_at_end:
         print("Loading the best model from saved checkpoint...")
         load_model(model, best_model_path)
-    
+
     return train_losses, val_accuracies
 
 
@@ -193,4 +193,3 @@ def plot_training_progress(train_losses, val_accuracies):
     # Display the plot
     plt.tight_layout()
     plt.show()
-
