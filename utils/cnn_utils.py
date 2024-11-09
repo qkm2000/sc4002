@@ -1,8 +1,9 @@
-from torch import nn
-import torch
 import os
-import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+from tqdm import tqdm
 from utils.utils import create_directory
+import matplotlib.pyplot as plt
 
 
 def save_model(model, model_save_path):
@@ -68,22 +69,7 @@ def validate(model, val_dataloader):
     return accuracy
 
 
-def last_hidden_state(outputs):
-    """Extract the last hidden state for classification."""
-    return outputs[:, -1]
-
-
-def mean_pooling(outputs):
-    """Apply mean pooling on the RNN outputs for classification."""
-    return torch.mean(outputs, dim=1)
-
-
-def max_pooling(outputs):
-    """Apply max pooling on the RNN outputs for classification."""
-    return torch.max(outputs, dim=1).values
-
-
-def train(
+def train_cnn(
     model,
     trn_dataloader,
     val_dataloader,
@@ -94,14 +80,11 @@ def train(
     epochs=10,
     criterion=nn.BCELoss(),
     early_stopping_patience=5,
-    load_best_model_at_end=True,
-    train_mode=None,
+    load_best_model_at_end=True
 ):
     """
-    Train a given model using the provided training and validation dataloaders.
+    Train a CNN model using the provided training and validation dataloaders.
     Args:
-        model (torch.nn.Module):
-            The model to be trained.
         trn_dataloader (torch.utils.data.DataLoader):
             DataLoader for the training data.
         val_dataloader (torch.utils.data.DataLoader):
@@ -119,16 +102,11 @@ def train(
         criterion (torch.nn.Module, optional):
             Loss function. Default is nn.BCELoss().
         early_stopping_patience (int, optional):
-            Number of epochs with no improvement after which training will be
-            stopped. Default is 5.
+            Number of epochs with no improvement
+            after which training will be stopped. Default is 5.
         load_best_model_at_end (bool, optional):
             Whether to load the best model at the end of training.
             Default is True.
-        train_mode (str, optional):
-            Mode to process RNN outputs.
-            Options are "last_state", "mean_pool", "max_pool".
-            Default is None, which uses the original output
-            without modification.
     Returns:
         tuple: A tuple containing:
             - losses (list of float):
@@ -137,57 +115,43 @@ def train(
                 List of accuracy values for each epoch.
     """
     create_directory(model_save_path)
-    losses = []  # List to store loss values
-    accuracies = []  # List to store accuracy values
+
+    train_losses = []
+    val_accuracies = []
     best_accuracy = 0
+    patience_counter = 0  # Counter for early stopping
 
     for epoch in range(epochs):
         model.train()
         total_loss = 0
-        for X_batch, y_batch in trn_dataloader:
+
+        # Training loop
+        for X_batch, y_batch in tqdm(trn_dataloader, desc=f"Epoch {epoch + 1}/{epochs}", unit="batch"):
             optimizer.zero_grad()
 
-            # Forward pass through the model
+            # Forward pass
             outputs = model(X_batch)
-
-            # Select output based on train_mode
-            if train_mode == "last_state":
-                output = last_hidden_state(outputs)
-            elif train_mode == "mean_pool":
-                output = mean_pooling(outputs)
-            elif train_mode == "max_pool":
-                output = max_pooling(outputs)
-            else:
-                output = outputs
-
-            if train_mode:
-                output = output.view(output.size(0), -1)
-
-            # Calculate the loss
-            loss = criterion(output, y_batch)
+            loss = criterion(outputs, y_batch)
             loss.backward()
             optimizer.step()
+
             total_loss += loss.item()
 
-        print(f"Epoch {epoch + 1:>3}/{epochs:>3},", end=" ")
-        print(f"Loss: {total_loss / len(trn_dataloader):.4f},", end=" ")
+        avg_loss = total_loss / len(trn_dataloader)
+        train_losses.append(avg_loss)
 
-        if train_mode:
-            filepath = f"{model_save_path}{model_type}_{train_mode}_v{version}.pth"
-        else:
+        # Validation step
+        val_accuracy = validate(model, val_dataloader)
+        val_accuracies.append(val_accuracy)
+
+        print(f"Epoch {epoch + 1}/{epochs}, Training Loss: {
+              avg_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}")
+
+        # Save model if validation accuracy improves
+        if val_accuracy > best_accuracy:
+            best_accuracy = val_accuracy
+            patience_counter = 0  # Reset patience counter
             filepath = f"{model_save_path}{model_type}_v{version}.pth"
-
-        # Validation accuracy
-        accuracy = validate(model, val_dataloader)
-
-        # record avg loss and accuracy
-        accuracies.append(accuracy)
-        losses.append(total_loss / len(trn_dataloader))
-
-        # Save the best model
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
-            patience_counter = 0
             save_model(model, filepath)
         else:
             patience_counter += 1
@@ -202,19 +166,50 @@ def train(
         print("Training ended, loading best model...")
         load_model(model, filepath)
 
-    return losses, accuracies
+    return train_losses, val_accuracies
 
 
-def plot_loss_accuracy(losses, accuracies):
-    epochs = range(1, len(losses) + 1)
+def plot_training_progress(train_losses, val_accuracies):
+    """
+    Plot the training progress of the CNN model,
+    including training losses and validation accuracies on the same graph.
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(epochs, losses, 'b-', label="Training Loss")
-    plt.plot(epochs, accuracies, 'r-', label="Validation Accuracy")
+    Args:
+        train_losses (list of float):
+            List of training losses for each epoch.
+        val_accuracies (list of float):
+            List of validation accuracies for each epoch.
+    """
+    epochs = range(1, len(train_losses) + 1)  # Number of epochs
 
-    plt.title("Training Loss and Validation Accuracy over Epochs")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss / Accuracy")
-    plt.legend()
-    plt.grid(True)
+    # Create a figure and a set of subplots
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    # Plot training loss on the first y-axis
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Training Loss', color='blue')
+    ax1.plot(epochs, train_losses, label='Training Loss', color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+
+    # Create a second y-axis to plot validation accuracy
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Validation Accuracy', color='green')
+    ax2.plot(
+        epochs,
+        val_accuracies,
+        label='Validation Accuracy',
+        color='green'
+    )
+    ax2.tick_params(axis='y', labelcolor='green')
+
+    # Add a title and grid
+    plt.title('Training Loss and Validation Accuracy Over Epochs')
+    ax1.grid(True)
+
+    # Show legend for both y-axes
+    ax1.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    # Display the plot
+    plt.tight_layout()
     plt.show()
