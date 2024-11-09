@@ -73,6 +73,26 @@ def validate(
     print(f"Accuracy: {accuracy:.4f}")
     return accuracy
 
+def last_hidden_state(outputs):
+    """Extract the last hidden state for classification."""
+    return outputs[:, -1]
+
+
+def mean_pooling(outputs):
+    """Apply mean pooling on the RNN outputs for classification."""
+    return torch.mean(outputs, dim=1)
+
+
+def max_pooling(outputs):
+    """Apply max pooling on the RNN outputs for classification."""
+    return torch.max(outputs, dim=1).values
+
+def apply_attention(outputs):
+    # Attention mechanism based on a simple weighted mask
+    # Customize this function based on the specific attention mask logic
+    weights = torch.softmax(outputs, dim=1)  # Simple example, adjust as needed
+    weighted_output = (weights * outputs).sum(dim=1)
+    return weighted_output
 
 def train_hybrid_model(
     model,
@@ -84,7 +104,8 @@ def train_hybrid_model(
     model_save_path='saved_models/',
     early_stopping_patience=5,
     load_best_model_at_end=True,
-    device='cuda' if torch.cuda.is_available() else 'cpu'
+    device='cuda' if torch.cuda.is_available() else 'cpu',
+    train_mode=None,
 ):
     # Move model to specified device
     model.to(device)
@@ -107,9 +128,28 @@ def train_hybrid_model(
             optimizer.zero_grad()
             outputs = model(X_batch)
 
+            # Select output based on train_mode
+            if train_mode == "last_state":
+                output = last_hidden_state(outputs)
+            elif train_mode == "mean_pool":
+                output = mean_pooling(outputs)
+            elif train_mode == "max_pool":
+                output = max_pooling(outputs)
+            elif train_mode == "mean_max":
+                mean_pooled = mean_pooling(outputs)
+                max_pooled = max_pooling(outputs)
+                output = (mean_pooled + max_pooled) / 2
+            elif train_mode == "attention":
+                output = apply_attention(outputs)
+            else:
+                output = outputs
+
+            if train_mode:
+                output = output.view(output.size(0), -1)
+
             # Ensure both outputs and y_batch have shape [batch_size, 1]
-            outputs = outputs.view(-1, 1)
-            y_batch = y_batch.view(-1, 1)
+            # outputs = outputs.view(-1, 1)
+            # y_batch = y_batch.view(-1, 1)
 
             # Calculate loss
             loss = criterion(outputs, y_batch.float())
@@ -125,7 +165,7 @@ def train_hybrid_model(
         # Validate model
         accuracy = validate(model, val_dataloader, device)
         val_accuracies.append(accuracy)  # Store validation accuracy for the epoch
-        print(f"Validation Accuracy: {accuracy:.4f}")
+        # print(f"Validation Accuracy: {accuracy:.4f}")
 
         # Save the best model
         if accuracy > best_accuracy:
