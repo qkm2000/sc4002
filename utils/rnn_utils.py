@@ -126,9 +126,15 @@ def train(
             Default is True.
         train_mode (str, optional):
             Mode to process RNN outputs.
-            Options are "last_state", "mean_pool", "max_pool".
             Default is None, which uses the original output
             without modification.
+            Options are:
+                None,
+                "last_state",
+                "mean_pool",
+                "max_pool",
+                "mean_max",
+                "attention".
     Returns:
         tuple: A tuple containing:
             - losses (list of float):
@@ -157,6 +163,12 @@ def train(
                 output = mean_pooling(outputs)
             elif train_mode == "max_pool":
                 output = max_pooling(outputs)
+            elif train_mode == "mean_max":
+                mean_pooled = mean_pooling(outputs)
+                max_pooled = max_pooling(outputs)
+                output = (mean_pooled + max_pooled) / 2
+            elif train_mode == "attention":
+                output = apply_attention(outputs)
             else:
                 output = outputs
 
@@ -203,6 +215,15 @@ def train(
         load_model(model, filepath)
 
     return losses, accuracies
+
+
+# Helper functions for the new modes
+def apply_attention(outputs):
+    # Attention mechanism based on a simple weighted mask
+    # Customize this function based on the specific attention mask logic
+    weights = torch.softmax(outputs, dim=1)  # Simple example, adjust as needed
+    weighted_output = (weights * outputs).sum(dim=1)
+    return weighted_output
 
 
 def plot_loss_accuracy(losses, accuracies):
