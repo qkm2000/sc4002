@@ -22,6 +22,7 @@ class RNNModel(nn.Module):
         num_layers (int, optional):
             Number of recurrent layers. Default is 1.
     """
+
     def __init__(
         self,
         embedding_dim,
@@ -68,10 +69,11 @@ class RNNModel(nn.Module):
             )
         else:
             raise ValueError(
-                "Invalid RNN type. Choose from 'rnn', 'lstm', or 'gru'.")
+                "Invalid RNN type. Choose from 'rnn', 'lstm', gru'."
+            )
 
         # Define the fully connected layer based on bidirectional setting
-        if bidirectional:
+        if bidirectional and self.rnn_type in ['rnn', 'lstm', 'gru']:
             self.fc = nn.Linear(hidden_size * 2, 1)
         else:
             self.fc = nn.Linear(hidden_size, 1)

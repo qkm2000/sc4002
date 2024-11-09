@@ -1,161 +1,8 @@
-from torch.utils.data import dataloader, Dataset
-from torch.nn.utils.rnn import pad_sequence
 from torch import nn
 import torch
-from gensim.utils import simple_preprocess
-from gensim.models import KeyedVectors
-import gensim.downloader as api
-import gensim
-import nltk
 import os
 import matplotlib.pyplot as plt
-import numpy as np
-
-nltk.download('punkt_tab')
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-
-
-class SentimentDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
-
-
-def create_directory(directory_path):
-    """
-    Create a directory if it does not exist.
-    Args:
-        directory_path (str):
-            The path to the directory to be created.
-    """
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-
-
-def load_word2vec(
-    vocab=None,
-    filepath=None,
-    word2vec_api=None,
-):
-    """
-    Load a Word2Vec model from a file or a pre-trained model from the
-    gensim API.
-
-    Args:
-        vocab (list of str, optional):
-            List of words in the vocabulary.
-            This is only required when loading a model from a .npy file.
-        filepath (str, optional):
-            The path to the Word2Vec model file. Defaults to None.
-        word2vec_api (str, optional):
-            The name of the pre-trained model to load from the gensim API.
-            Defaults to None.
-
-    Returns:
-        gensim.models.KeyedVectors:
-            The loaded Word2Vec model.
-
-    Notes:
-    - If both `filepath` and `word2vec_api` are provided,
-      `word2vec_api` will take precedence.
-    - If neither `filepath` nor `word2vec_api` are provided, the function
-      will load the "word2vec-google-news-300" model from the
-      gensim API.
-    """
-    if word2vec_api is not None:
-        return api.load(word2vec_api)
-    if filepath is not None:
-        embedding_matrix = np.load(filepath)
-        if vocab is None:
-            raise ValueError("Vocabulary must be provided when loading .npy")
-        vector_size = embedding_matrix.shape[1]
-        word2vec_model = KeyedVectors(vector_size=vector_size)
-        word2vec_model.add_vectors(vocab, embedding_matrix)
-        return word2vec_model
-    return api.load("word2vec-google-news-300")
-
-
-def prepare_data(
-    sentences,
-    labels,
-    word_index,
-    max_seq_len=15
-):
-    """
-    Prepares data for RNN input by tokenizing, padding,
-    and converting to tensors.
-
-    Args:
-        sentences (list of str):
-            List of sentences to be processed.
-        labels (list of int/float):
-            List of labels corresponding to the sentences.
-        word_index (dict):
-            Dictionary mapping words to their respective indices.
-        max_seq_len (int, optional):
-            Maximum sequence length for padding/truncating. Defaults to 15.
-    Returns:
-        tuple: A tuple containing:
-            - X_padded (torch.Tensor):
-                Tensor of tokenized and padded sentences.
-            - y (torch.Tensor):
-                Tensor of labels reshaped to match the output shape.
-    """
-    X = [
-        [word_index[word]
-            for word in simple_preprocess(sentence) if word in word_index]
-        for sentence in sentences
-    ]
-
-    # Clip sequences that are longer than max_seq_len
-    X = [seq[:max_seq_len] if len(seq) > max_seq_len else seq for seq in X]
-
-    # Convert to tensors and pad the sequences
-    X = [torch.tensor(seq, dtype=torch.long) for seq in X]
-    X_padded = pad_sequence(
-        X,
-        batch_first=True,
-        padding_value=0  # Use 0 for padding
-    )
-
-    # Further clip or pad to ensure all are exactly max_seq_len
-    X_padded = X_padded[:, :max_seq_len] if \
-        X_padded.size(1) > max_seq_len else \
-        torch.nn.functional.pad(
-            X_padded, (0, max_seq_len - X_padded.size(1)), value=0)
-
-    y = torch.tensor(labels, dtype=torch.float32).unsqueeze(
-        1)  # Reshape to match the output shape
-    return X_padded, y
-
-
-def create_dataloader(X, y, batch_size, shuffle=True):
-    """
-    Create a PyTorch DataLoader for a dataset.
-    Args:
-        X (np.ndarray):
-            The input data.
-        y (np.ndarray):
-            The target data.
-        batch_size (int):
-            The batch size for the DataLoader.
-    Returns:
-        torch.utils.data.DataLoader:
-            The DataLoader for the dataset.
-    """
-    dataset = SentimentDataset(X, y)
-    return dataloader.DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle
-    )
+from utils.utils import create_directory
 
 
 def save_model(model, model_save_path):
@@ -279,9 +126,15 @@ def train(
             Default is True.
         train_mode (str, optional):
             Mode to process RNN outputs.
-            Options are "last_state", "mean_pool", "max_pool".
             Default is None, which uses the original output
             without modification.
+            Options are:
+                None,
+                "last_state",
+                "mean_pool",
+                "max_pool",
+                "mean_max",
+                "attention".
     Returns:
         tuple: A tuple containing:
             - losses (list of float):
@@ -293,6 +146,7 @@ def train(
     losses = []  # List to store loss values
     accuracies = []  # List to store accuracy values
     best_accuracy = 0
+
     for epoch in range(epochs):
         model.train()
         total_loss = 0
@@ -309,6 +163,12 @@ def train(
                 output = mean_pooling(outputs)
             elif train_mode == "max_pool":
                 output = max_pooling(outputs)
+            elif train_mode == "mean_max":
+                mean_pooled = mean_pooling(outputs)
+                max_pooled = max_pooling(outputs)
+                output = (mean_pooled + max_pooled) / 2
+            elif train_mode == "attention":
+                output = apply_attention(outputs)
             else:
                 output = outputs
 
@@ -329,21 +189,22 @@ def train(
         else:
             filepath = f"{model_save_path}{model_type}_v{version}.pth"
 
+        # Validation accuracy
         accuracy = validate(model, val_dataloader)
 
         # record avg loss and accuracy
         accuracies.append(accuracy)
         losses.append(total_loss / len(trn_dataloader))
 
+        # Save the best model
         if accuracy > best_accuracy:
             best_accuracy = accuracy
-            patience_counter = 0  # Reset patience counter
-            # model is improving, save the model
+            patience_counter = 0
             save_model(model, filepath)
         else:
             patience_counter += 1
 
-        # Check for early stopping
+        # Early stopping
         if patience_counter >= early_stopping_patience:
             print(f"Early stopping triggered after {epoch + 1} epochs.")
             break
@@ -354,6 +215,15 @@ def train(
         load_model(model, filepath)
 
     return losses, accuracies
+
+
+# Helper functions for the new modes
+def apply_attention(outputs):
+    # Attention mechanism based on a simple weighted mask
+    # Customize this function based on the specific attention mask logic
+    weights = torch.softmax(outputs, dim=1)  # Simple example, adjust as needed
+    weighted_output = (weights * outputs).sum(dim=1)
+    return weighted_output
 
 
 def plot_loss_accuracy(losses, accuracies):
