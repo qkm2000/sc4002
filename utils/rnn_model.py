@@ -3,26 +3,6 @@ from torch import nn
 
 
 class RNNModel(nn.Module):
-    """
-    A Recurrent Neural Network (RNN) model with support
-    for different RNN types (RNN, LSTM, GRU).
-    Args:
-        embedding_dim (int):
-            Dimension of the embeddings.
-        hidden_size (int):
-            Number of features in the hidden state.
-        embedding_matrix (numpy.ndarray):
-            Pre-trained embedding matrix.
-        rnn_type (str, optional):
-            Type of RNN to use ('rnn', 'lstm', 'gru'). Default is 'rnn'.
-        freeze_embeddings (bool, optional):
-            Whether to freeze the embedding weights. Default is True.
-        bidirectional (bool, optional):
-            If True, becomes a bidirectional RNN. Default is True.
-        num_layers (int, optional):
-            Number of recurrent layers. Default is 1.
-    """
-
     def __init__(
         self,
         embedding_dim,
@@ -32,17 +12,19 @@ class RNNModel(nn.Module):
         freeze_embeddings=True,
         bidirectional=True,
         num_layers=1,
+        pooling_method="last_state",  # Method for sentence representation
     ):
         super(RNNModel, self).__init__()
 
-        # Create the embedding layer using Word2Vec
+        # Embedding layer
         self.embedding = nn.Embedding.from_pretrained(
             torch.tensor(embedding_matrix, dtype=torch.float32),
-            freeze=freeze_embeddings  # Freeze the embedding weights
+            freeze=freeze_embeddings
         )
         self.rnn_type = rnn_type.lower()
+        self.pooling_method = pooling_method
 
-        # Initialize the chosen RNN type
+        # RNN layer
         if self.rnn_type == 'rnn':
             self.rnn = nn.RNN(
                 input_size=embedding_dim,
@@ -68,38 +50,50 @@ class RNNModel(nn.Module):
                 bidirectional=bidirectional
             )
         else:
-            raise ValueError(
-                "Invalid RNN type. Choose from 'rnn', 'lstm', gru'."
-            )
+            raise ValueError("Invalid RNN type. Choose from 'rnn', 'lstm', 'gru'.")
 
-        # Define the fully connected layer based on bidirectional setting
-        if bidirectional and self.rnn_type in ['rnn', 'lstm', 'gru']:
-            self.fc = nn.Linear(hidden_size * 2, 1)
-        else:
-            self.fc = nn.Linear(hidden_size, 1)
+        self.bidirectional = bidirectional
+        direction_factor = 2 if bidirectional else 1
 
-        self.dropout = nn.Dropout(0.5)  # Dropout for regularization
+        # Fully connected layer
+        self.fc = nn.Linear(hidden_size * direction_factor, 1)
+        self.dropout = nn.Dropout(0.5)
         self.sigmoid = nn.Sigmoid()
+
+        # Attention layer if pooling_method is 'attention'
+        if self.pooling_method == 'attention':
+            self.attention_weights = nn.Linear(hidden_size * direction_factor, 1)
 
     def forward(self, x):
         x = self.embedding(x)
+        rnn_output, _ = self.rnn(x)
 
-        # Forward pass through RNN
-        if self.rnn_type == 'rnn':
-            _, hn = self.rnn(x)
-        elif self.rnn_type == 'lstm':
-            _, (hn, _) = self.rnn(x)
-        elif self.rnn_type == 'gru':
-            _, hn = self.rnn(x)
+        if self.pooling_method == 'last_state':
+            sentence_representation = rnn_output[:, -1, :]
 
-        # Combine forward and backward hidden states if bidirectional
-        if self.rnn.bidirectional:
-            hn = self.dropout(
-                hn[-2:].transpose(0, 1).contiguous().view(x.size(0), -1)
-            )
+        elif self.pooling_method == 'mean_pool':
+            # Apply mean pooling over time
+            sentence_representation = torch.mean(rnn_output, dim=1)
+
+        elif self.pooling_method == 'max_pool':
+            # Apply max pooling over time
+            sentence_representation, _ = torch.max(rnn_output, dim=1)
+
+        elif self.pooling_method == 'mean_max':
+            # Combine mean and max pooling
+            max_pooled, _ = torch.max(rnn_output, dim=1)
+            mean_pooled = torch.mean(rnn_output, dim=1)
+            sentence_representation = (mean_pooled + max_pooled) / 2
+
+        elif self.pooling_method == 'attention':
+            # Compute attention scores and apply them
+            attn_weights = torch.tanh(self.attention_weights(rnn_output)).squeeze(-1)
+            attn_weights = torch.softmax(attn_weights, dim=1)
+            sentence_representation = torch.sum(rnn_output * attn_weights.unsqueeze(-1), dim=1)
+
         else:
-            hn = self.dropout(hn[-1].view(x.size(0), -1))
+            raise ValueError("Invalid pooling method. Choose from 'last_state', 'max_pool', 'mean_pool', 'meanmax_pool', 'attention'.")
 
-        # Final output layer
-        out = self.fc(hn)
+        sentence_representation = self.dropout(sentence_representation)
+        out = self.fc(sentence_representation)
         return self.sigmoid(out)

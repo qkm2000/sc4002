@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from utils.utils import create_directory
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def save_model(model, model_save_path):
     """
     Save the state dictionary of a PyTorch model to a specified file path.
@@ -59,6 +62,7 @@ def validate(model, val_dataloader):
     with torch.no_grad():
         for data in val_dataloader:
             inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             predicted = torch.round(outputs)
             total += labels.size(0)
@@ -142,6 +146,7 @@ def train(
             - accuracies (list of float):
                 List of accuracy values for each epoch.
     """
+    model = model.to(device)
     create_directory(model_save_path)
     losses = []  # List to store loss values
     accuracies = []  # List to store accuracy values
@@ -151,29 +156,11 @@ def train(
         model.train()
         total_loss = 0
         for X_batch, y_batch in trn_dataloader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
 
             # Forward pass through the model
-            outputs = model(X_batch)
-
-            # Select output based on train_mode
-            if train_mode == "last_state":
-                output = last_hidden_state(outputs)
-            elif train_mode == "mean_pool":
-                output = mean_pooling(outputs)
-            elif train_mode == "max_pool":
-                output = max_pooling(outputs)
-            elif train_mode == "mean_max":
-                mean_pooled = mean_pooling(outputs)
-                max_pooled = max_pooling(outputs)
-                output = (mean_pooled + max_pooled) / 2
-            elif train_mode == "attention":
-                output = apply_attention(outputs)
-            else:
-                output = outputs
-
-            if train_mode:
-                output = output.view(output.size(0), -1)
+            output = model(X_batch)
 
             # Calculate the loss
             loss = criterion(output, y_batch)
