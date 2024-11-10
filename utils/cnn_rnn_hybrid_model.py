@@ -9,6 +9,7 @@ class CNNRNNHybridModel(nn.Module):
         embedding_matrix,
         rnn_hidden_dim,
         num_classes,
+        hidden_size=2048,
         kernel_size=3,
         conv_out_channels=128,
         cnn_layers=2,
@@ -16,12 +17,12 @@ class CNNRNNHybridModel(nn.Module):
         fc_hidden_dim=256,
         freeze_embeddings=True,
         dropout_prob=0.5,
-        pooling_mode="last_state"
+        pooling_method="last_state"
     ):
         super(CNNRNNHybridModel, self).__init__()
 
         # Store pooling mode
-        self.pooling_mode = pooling_mode
+        self.pooling_method = pooling_method
 
         # Embedding layer
         self.embedding = nn.Embedding.from_pretrained(
@@ -80,6 +81,10 @@ class CNNRNNHybridModel(nn.Module):
         self.dropout_fc = nn.Dropout(dropout_prob)
         self.relu = nn.ReLU()
 
+        direction_factor = 2  # bidirectional
+        if self.pooling_method == 'attention':
+            self.attention_weights = nn.Linear(hidden_size * direction_factor, 1)
+
     def forward(self, x):
         # Embedding
         x = self.embedding(x)    # shape: (batch_size, seq_len, embed_dim)
@@ -97,12 +102,23 @@ class CNNRNNHybridModel(nn.Module):
                 x, _ = rnn_layer(x)  # Pass through LSTM or GRU layer
 
         # Pooling options
-        if self.pooling_mode == "last_state":
+        if self.pooling_method == "last_state":
             x = x[:, -1, :]  # Use the last hidden state of the sequence
-        elif self.pooling_mode == "mean_max":
+        elif self.pooling_method == "mean_max":
             mean_pool = torch.mean(x, dim=1)
             max_pool, _ = torch.max(x, dim=1)
             x = (mean_pool + max_pool) / 2
+        elif self.pooling_method == 'attention':
+            # Compute attention scores and apply them
+            # attention_weights: shape (batch_size, seq_len, 1)
+            attn_weights = torch.tanh(self.attention_weights(x))  # Apply tanh on the output of RNN layers
+            attn_weights = attn_weights.squeeze(-1)  # Remove the last dimension to shape (batch_size, seq_len)
+
+            # Normalize the attention weights across the sequence length (dim=1)
+            attn_weights = torch.softmax(attn_weights, dim=1)  # shape: (batch_size, seq_len)
+
+            # Apply attention weights: shape (batch_size, seq_len, hidden_dim)
+            x = torch.sum(x * attn_weights.unsqueeze(-1), dim=1)  # Summing over the sequence length
 
         # Fully connected layers with activation and dropout
         x = self.fc1(x)

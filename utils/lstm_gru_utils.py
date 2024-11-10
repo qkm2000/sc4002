@@ -6,6 +6,9 @@ from utils.utils import create_directory
 import matplotlib.pyplot as plt
 
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 def save_model(model, model_save_path):
     """
     Save the state dictionary of a PyTorch model to a specified file path.
@@ -43,7 +46,7 @@ def load_model(model, model_save_path):
 def validate(
     model,
     val_dataloader,
-    device='cuda' if torch.cuda.is_available() else 'cpu',
+    device=device,
 ):
     """
     Evaluate the performance of a model on a validation dataset.
@@ -73,6 +76,7 @@ def validate(
     print(f"Accuracy: {accuracy:.4f}")
     return accuracy
 
+
 def last_hidden_state(outputs):
     """Extract the last hidden state for classification."""
     return outputs[:, -1]
@@ -87,12 +91,14 @@ def max_pooling(outputs):
     """Apply max pooling on the RNN outputs for classification."""
     return torch.max(outputs, dim=1).values
 
+
 def apply_attention(outputs):
     # Attention mechanism based on a simple weighted mask
     # Customize this function based on the specific attention mask logic
     weights = torch.softmax(outputs, dim=1)  # Simple example, adjust as needed
     weighted_output = (weights * outputs).sum(dim=1)
     return weighted_output
+
 
 def train_lstm_gru_model(
     model,
@@ -104,20 +110,21 @@ def train_lstm_gru_model(
     model_save_path,
     early_stopping_patience=5,
     load_best_model_at_end=True,
-    device='cpu',
+    device=device,
     train_mode=None,
 ):
+    model = model.to(device)
     best_val_accuracy = 0
     patience_counter = 0
     train_losses = []
     val_accuracies = []
-    
+
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0
         for inputs, labels in trn_dataloader:
             inputs, labels = inputs.to(device), labels.to(device)
-            
+
             optimizer.zero_grad()
             outputs = model(inputs)
 
@@ -143,18 +150,17 @@ def train_lstm_gru_model(
             loss = criterion(outputs.squeeze(), labels.squeeze())
             loss.backward()
             optimizer.step()
-            
+
             epoch_loss += loss.item()
-        
+
         train_losses.append(epoch_loss / len(trn_dataloader))
-        
-        
+
         print(f"Epoch {epoch + 1}/{epochs}, Training Loss: {train_losses[-1]:.4f}")
 
         # Validation
         val_accuracy = validate(model, val_dataloader, device)
         val_accuracies.append(val_accuracy)
-        
+
         # Early Stopping
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
@@ -166,11 +172,12 @@ def train_lstm_gru_model(
             if patience_counter >= early_stopping_patience:
                 print("Early stopping triggered")
                 break
-    
+
     if load_best_model_at_end:
         model.load_state_dict(torch.load(model_save_path + "best_model.pth"))
-    
+
     return train_losses, val_accuracies
+
 
 def plot_training_progress(train_losses, val_accuracies):
     """
